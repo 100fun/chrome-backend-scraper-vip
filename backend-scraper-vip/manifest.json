@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "100fun 表格抓取工具 Pro",
+  "version": "2.0.0",
+  "description": "支持后台运行的表格数据抓取工具",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "downloads",
+    "tabs",
+    "alarms",
+    "management"
+  ],
+  "host_permissions": [
+    "https://hskg.vivemall.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/popup.html"
+  }
+}

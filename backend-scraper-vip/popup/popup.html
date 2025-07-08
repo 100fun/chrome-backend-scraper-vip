@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>100fun 表格抓取工具 Pro</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h1>100fun 表格抓取工具 Pro</h1>
+  
+  <div class="status-bar">
+    <div class="status-label">状态:</div>
+    <div id="statusText" class="status-text">初始化中...</div>
+  </div>
+  
+  <!-- 基本功能按钮 -->
+  <div class="button-row">
+    <button id="startBtn">开始抓取</button>
+    <button id="stopBtn" disabled>停止抓取</button>
+  </div>
+  
+  <!-- 周期性抓取设置 -->
+  <div class="periodic-container">
+    <div class="periodic-header">
+      <label class="toggle-switch">
+        <input type="checkbox" id="togglePeriodicSwitch">
+        <span class="slider round"></span>
+      </label>
+      <span>启用周期性抓取</span>
+    </div>
+    
+    <div class="periodic-settings" id="periodicSettings">
+      <label>间隔时间:</label>
+      <div class="interval-selector">
+        <input type="number" id="periodicInterval" min="1" max="60" value="5">
+        <span>分钟</span>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 进度指示器 -->
+  <div id="progressIndicator" class="progress-indicator hidden">
+    <div class="progress-bar">
+      <div id="progressBar" class="progress-bar-inner"></div>
+    </div>
+    <div id="progressText" class="progress-text">正在准备抓取...</div>
+  </div>
+  
+  <!-- 数据统计 -->
+  <div class="stats-container">
+    <h3>数据统计</h3>
+    <div class="stats-grid">
+      <div class="stats-item">
+        <span class="stats-label">总记录数:</span>
+        <span id="totalRecords" class="stats-value">-</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">总页数:</span>
+        <span id="totalPages" class="stats-value">-</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">当前页:</span>
+        <span id="currentPage" class="stats-value">-</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">已抓取页数:</span>
+        <span id="collectedPages" class="stats-value">-</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">当前轮次:</span>
+        <span id="currentRound" class="stats-value">-</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">下次抓取:</span>
+        <span id="nextScrapeTime" class="stats-value">-</span>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 数据提交状态区域 -->
+  <div class="submission-status">
+    <h3>数据提交状态</h3>
+    <div class="stats-grid">
+      <div class="stats-item">
+        <span class="stats-label">提交成功:</span>
+        <span id="submissionSuccess" class="stats-value">0</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">提交失败:</span>
+        <span id="submissionFailed" class="stats-value">0</span>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 新增统一重置按钮区域 -->
+  <div class="reset-container">
+    <button id="fullResetApp" class="full-reset-button">重置插件</button>
+    <span class="reset-hint">重置插件将停止所有任务，清除所有数据，恢复初始状态。</span>
+  </div>
+  
+  <!-- 日志区域 -->
+  <div class="log-container">
+    <h3>操作日志</h3>
+    <div id="logArea" class="log-area"></div>
+  </div>
+  
+  <div class="footer">
+    <span>版本: 2.0.0 | 由100fun开发</span>
+    <span id="lastUpdate">最后更新: 从未</span>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
