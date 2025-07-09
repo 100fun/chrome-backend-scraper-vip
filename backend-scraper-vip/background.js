@@ -1,7 +1,7 @@
 /**
  * 100fun 表格抓取工具 Pro - 后台服务脚本
  * 版本: 2.0.0
- * 日期: 2025-07-07
+ * 日期: 2025-07-09
  * 作者: 100fun
  */
 
@@ -306,7 +306,7 @@ async function submitPageDataToServer(pageData) {
   }
 }
 
-// 抓取当前页数据
+// 抓取当前页数据 - 修改后的版本，专门识别"订单创建时间"列
 async function scrapeCurrentPage() {
   try {
     console.log(`[100fun] 开始抓取第 ${scrapeState.currentPage} 页数据`);
@@ -368,7 +368,6 @@ async function scrapeCurrentPage() {
               totalPages = parseInt(pageInput.max, 10);
             }
             console.log(`[100fun] 找到页码输入框: 当前页=${currentPage}, 总页数=${totalPages}`);
-            console.log(`[100fun] 页码输入框详情: min=${pageInput.min}, max=${pageInput.max}`);
           } else {
             // 备用方法：从活动页码获取
             const activePage = document.querySelector('.el-pager .number.active');
@@ -418,7 +417,7 @@ async function scrapeCurrentPage() {
             
             if (headerRow.length > 0) {
               tableData.rows.push(headerRow);
-              console.log(`[100fun] 表格 ${tableIndex + 1} 表头: ${headerRow.length} 列`);
+              console.log(`[100fun] 表格 ${tableIndex + 1} 表头: ${JSON.stringify(headerRow)}`);
             }
             
             // 获取表格内容
@@ -468,6 +467,57 @@ async function scrapeCurrentPage() {
             pageInputInfo.max = pageInput.max;
             console.log(`[100fun] 获取到页码输入框选择器: ${pageInputInfo.selector}`);
           }
+
+          // ===== 改进部分：专门识别"订单创建时间"列 =====
+          let firstOrderDate = null;
+          let firstOrderDateColumn = -1;
+          // 添加"订单创建时间"作为第一个要查找的表头名称
+          const possibleHeaders = ["订单创建时间", "订单时间", "下单时间", "订单日期", "交易时间", "时间", "成交时间", "创建时间"];
+
+          if (extractedTables[0] && extractedTables[0].rows.length >= 2) {
+            // 获取表头
+            const headers = extractedTables[0].rows[0];
+            console.log(`[100fun] 完整表头: ${JSON.stringify(headers)}`);
+            
+            // 专门查找"订单创建时间"列
+            for (let i = 0; i < headers.length; i++) {
+              const header = headers[i].trim();
+              console.log(`[100fun] 检查表头[${i}]: "${header}"`);
+              
+              // 首先精确匹配"订单创建时间"
+              if (header === "订单创建时间") {
+                firstOrderDateColumn = i;
+                console.log(`[100fun] 找到精确匹配的订单创建时间列: 列索引=${i}`);
+                break;
+              }
+              
+              // 如果没有精确匹配，尝试其他可能的表头
+              for (const keyword of possibleHeaders) {
+                if (header.includes(keyword)) {
+                  firstOrderDateColumn = i;
+                  console.log(`[100fun] 找到时间列: 列索引=${i}, 表头="${header}", 匹配关键词="${keyword}"`);
+                  break;
+                }
+              }
+              if (firstOrderDateColumn !== -1) break;
+            }
+
+            // 如果找到时间列，则提取第一行的时间
+            if (firstOrderDateColumn !== -1) {
+              const firstDataRow = extractedTables[0].rows[1]; // 第一行数据(索引1，因为0是表头)
+              if (firstDataRow && firstDataRow.length > firstOrderDateColumn) {
+                firstOrderDate = firstDataRow[firstOrderDateColumn];
+                console.log(`[100fun] 第一条订单时间值: "${firstOrderDate}"`);
+              } else {
+                console.log(`[100fun] 无法获取第一行数据的时间值`);
+              }
+            } else {
+              // 如果没找到时间列，记录当前表格的所有表头以便调试
+              console.log(`[100fun] 警告: 在表头 [${headers.join(', ')}] 中没有找到任何时间相关列`);
+            }
+          } else {
+            console.log(`[100fun] 表格数据不足，无法提取订单时间`);
+          }
           
           console.log('[100fun] 表格数据抓取完成');
           return {
@@ -479,7 +529,10 @@ async function scrapeCurrentPage() {
             actualRows: actualRows,
             totalPages: totalPages,
             currentPage: currentPage,
-            pageInputInfo: pageInputInfo
+            pageInputInfo: pageInputInfo,
+            firstOrderDate: firstOrderDate,
+            firstOrderDateColumn: firstOrderDateColumn,
+            rawFirstRow: extractedTables[0]?.rows[1] // 添加原始第一行数据用于调试
           };
         } catch (e) {
           console.error(`[100fun] 抓取表格出错: ${e.message}`);
@@ -512,6 +565,35 @@ async function scrapeCurrentPage() {
       const result = results[0].result;
       if (result.success) {
         console.log(`[100fun] 抓取第 ${scrapeState.currentPage} 页成功`);
+
+        // ===== 日期检测部分 =====
+        console.log('[100fun] ======== 日期检测开始 ========');
+        if (result.firstOrderDate) {
+          console.log(`[100fun] 原始第一条订单日期: "${result.firstOrderDate}"`);
+          
+          const isToday = checkIfDateIsToday(result.firstOrderDate);
+          console.log(`[100fun] 日期检查结果: 是今天 = ${isToday}`);
+          
+          if (!isToday) {
+            console.log('[100fun] ⚠️ 检测到非当日数据，将刷新页面重试');
+            
+            // 更新状态
+            await updateState({
+              status: 'refreshing',
+              message: '数据不是今天的，正在刷新页面...'
+            });
+            
+            // 延迟刷新页面
+            console.log('[100fun] 1秒后将刷新页面...');
+            setTimeout(() => refreshPageAndRestart(), 1000);
+            return;
+          } else {
+            console.log('[100fun] ✓ 确认为当日数据，继续抓取流程');
+          }
+        } else {
+          console.log('[100fun] ⚠️ 无法确定订单日期，将继续抓取');
+        }
+        console.log('[100fun] ======== 日期检测结束 ========');
         
         // 保存数据到集合
         const pageData = {
@@ -571,6 +653,92 @@ async function scrapeCurrentPage() {
     }
   } catch (err) {
     handleError(`抓取第 ${scrapeState.currentPage} 页出错: ${err.message}`);
+  }
+}
+
+// 检查日期是否为今天 - 针对"订单创建时间"列优化版
+function checkIfDateIsToday(dateString) {
+  try {
+    if (!dateString) {
+      console.log('[100fun] 日期为空，无法比较');
+      return false;
+    }
+    
+    // 获取当前日期
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const todayFormatted = `${year}-${month}-${day}`;
+    
+    console.log(`[100fun] 今天日期: ${todayFormatted}`);
+    console.log(`[100fun] 订单日期原始值: "${dateString}"`);
+    
+    // 处理"2025-07-08 23:48"这种格式，提取日期部分
+    let orderDate = dateString;
+    if (dateString.includes(' ')) {
+      orderDate = dateString.split(' ')[0];
+      console.log(`[100fun] 提取空格前的日期部分: "${orderDate}"`);
+    }
+    
+    console.log(`[100fun] 处理后的订单日期: "${orderDate}", 今天是: "${todayFormatted}"`);
+    
+    // 比较日期
+    const result = orderDate === todayFormatted;
+    console.log(`[100fun] 日期比较结果: ${result}`);
+    
+    return result;
+  } catch (error) {
+    console.error(`[100fun] 检查日期出错: ${error.message}`);
+    return false; // 出错时返回false，保守处理
+  }
+}
+
+// 刷新页面并重新开始抓取 - 改进版
+async function refreshPageAndRestart() {
+  try {
+    console.log(`[100fun] 开始执行页面刷新流程 - 因为检测到非当天订单`);
+    
+    // 更新状态
+    await updateState({
+      status: 'refreshing',
+      message: '正在刷新页面以获取当天数据...'
+    });
+    
+    // 执行页面刷新
+    console.log(`[100fun] 调用页面刷新`);
+    await chrome.scripting.executeScript({
+      target: {tabId: scrapeState.targetTabId},
+      func: () => {
+        console.log('[100fun] 页面内脚本: 正在刷新页面获取今日数据...');
+        // 记录当前URL，以便后续验证
+        const originalUrl = window.location.href;
+        console.log(`[100fun] 当前页面URL: ${originalUrl}`);
+        
+        // 强制刷新页面
+        window.location.reload(true);
+        return { success: true, originalUrl };
+      }
+    });
+    
+    // 给页面充分的加载时间
+    console.log(`[100fun] 等待页面加载 (4秒)...`);
+    await new Promise(resolve => setTimeout(resolve, 4000));
+    
+    // 重新点击查询按钮
+    console.log(`[100fun] 重新点击查询按钮...`);
+    await clickQueryButton();
+    
+    // 等待查询结果加载
+    console.log(`[100fun] 等待查询结果加载 (3秒)...`);
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    // 重新开始抓取当前页
+    console.log(`[100fun] 重新开始抓取...`);
+    scrapeCurrentPage();
+    
+  } catch (err) {
+    handleError(`刷新页面出错: ${err.message}`);
   }
 }
 
