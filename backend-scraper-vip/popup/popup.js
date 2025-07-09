@@ -83,6 +83,9 @@ function updateUI(state) {
     case 'error':
       statusText.textContent = '错误: ' + (state.error || '未知错误');
       break;
+    case 'refreshing':
+      statusText.textContent = '数据不是今天的，正在刷新页面...';
+      break;
     default:
       statusText.textContent = state.status || '未知状态';
   }
@@ -323,9 +326,9 @@ function addLog(message, type = 'info') {
 
 // 监听来自后台的消息
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.action === 'stateUpdated') {
+  if (message.action === 'stateUpdated' || message.type === 'STATE_UPDATED') {
     // 更新UI
-    updateUI(message.state);
+    updateUI(message.state || message.payload);
   }
 });
 
