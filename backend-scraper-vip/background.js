@@ -306,22 +306,219 @@ async function submitPageDataToServer(pageData) {
   }
 }
 
+// 检查页面HTTP状态码
+async function checkPageStatus() {
+  try {
+    console.log(`[100fun] 检查页面HTTP状态码...`);
+    
+    const results = await chrome.scripting.executeScript({
+      target: {tabId: scrapeState.targetTabId},
+      func: () => {
+        try {
+          // 检查页面是否正确加载
+          const readyState = document.readyState;
+          const url = window.location.href;
+          const title = document.title;
+          
+          console.log(`[100fun] 页面状态检查: readyState=${readyState}, URL=${url}`);
+          
+          // 检查页面是否是错误页面
+          if (title.includes('404') || title.includes('错误') || title.includes('Error')) {
+            return {
+              success: false,
+              status: 'error_page',
+              message: '检测到错误页面',
+              details: { title, url, readyState }
+            };
+          }
+          
+          // 检查页面是否完全加载
+          if (readyState !== 'complete') {
+            return {
+              success: false,
+              status: 'loading',
+              message: '页面未完全加载',
+              details: { title, url, readyState }
+            };
+          }
+          
+          // 检查是否有网络错误指示
+          const errorElements = document.querySelectorAll('[class*="error"], [class*="404"], [id*="error"]');
+          if (errorElements.length > 0) {
+            return {
+              success: false,
+              status: 'error_elements',
+              message: '页面包含错误元素',
+              details: { title, url, readyState, errorCount: errorElements.length }
+            };
+          }
+          
+          return {
+            success: true,
+            status: 'ok',
+            message: '页面状态正常',
+            details: { title, url, readyState }
+          };
+        } catch (e) {
+          return {
+            success: false,
+            status: 'exception',
+            message: '页面状态检查出错: ' + e.message,
+            details: { error: e.toString() }
+          };
+        }
+      }
+    });
+    
+    if (results && results[0] && results[0].result) {
+      const result = results[0].result;
+      console.log(`[100fun] 页面状态检查结果: ${result.status} - ${result.message}`);
+      
+      if (result.success) {
+        console.log(`[100fun] ✓ 页面状态正常: ${result.details.title}`);
+        return true;
+      } else {
+        console.log(`[100fun] ⚠️ 页面状态异常: ${result.message}`);
+        console.log(`[100fun] 详细信息:`, result.details);
+        return false;
+      }
+    } else {
+      console.log(`[100fun] ⚠️ 无法获取页面状态检查结果`);
+      return false;
+    }
+  } catch (err) {
+    console.error(`[100fun] 页面状态检查出错: ${err.message}`);
+    return false;
+  }
+}
+
+// 检查表格是否存在
+async function checkTableExists() {
+  try {
+    console.log(`[100fun] 检查表格是否存在...`);
+    
+    const results = await chrome.scripting.executeScript({
+      target: {tabId: scrapeState.targetTabId},
+      func: () => {
+        try {
+          const tables = document.querySelectorAll('.el-table__body');
+          console.log(`[100fun] 表格检查: 找到 ${tables.length} 个表格`);
+          
+          if (tables.length === 0) {
+            // 进一步检查是否有加载中的表格元素
+            const loadingTables = document.querySelectorAll('.el-table', '.el-loading-parent--relative');
+            const emptyTables = document.querySelectorAll('.el-table__empty-text');
+            
+            console.log(`[100fun] 加载中的表格: ${loadingTables.length}, 空表格提示: ${emptyTables.length}`);
+            
+            return {
+              success: false,
+              tableCount: 0,
+              loadingTables: loadingTables.length,
+              emptyTables: emptyTables.length,
+              message: '页面上没有找到表格数据'
+            };
+          }
+          
+          // 检查表格是否有实际数据
+          let hasData = false;
+          tables.forEach(table => {
+            const rows = table.querySelectorAll('tr');
+            if (rows.length > 0) {
+              hasData = true;
+            }
+          });
+          
+          return {
+            success: true,
+            tableCount: tables.length,
+            hasData: hasData,
+            message: `找到 ${tables.length} 个表格${hasData ? '且包含数据' : '但无数据'}`
+          };
+        } catch (e) {
+          return {
+            success: false,
+            tableCount: 0,
+            message: '表格检查出错: ' + e.message,
+            error: e.toString()
+          };
+        }
+      }
+    });
+    
+    if (results && results[0] && results[0].result) {
+      const result = results[0].result;
+      console.log(`[100fun] 表格检查结果: ${result.message}`);
+      
+      if (result.success && result.tableCount > 0) {
+        console.log(`[100fun] ✓ 表格检查通过: 找到 ${result.tableCount} 个表格`);
+        return true;
+      } else {
+        console.log(`[100fun] ⚠️ 表格检查失败: ${result.message}`);
+        if (result.loadingTables > 0) {
+          console.log(`[100fun] 检测到 ${result.loadingTables} 个加载中的表格，可能需要等待`);
+        }
+        return false;
+      }
+    } else {
+      console.log(`[100fun] ⚠️ 无法获取表格检查结果`);
+      return false;
+    }
+  } catch (err) {
+    console.error(`[100fun] 表格检查出错: ${err.message}`);
+    return false;
+  }
+}
+
 // 抓取当前页数据 - 修改后的版本，专门识别"订单创建时间"列
 async function scrapeCurrentPage() {
   try {
-    console.log(`[100fun] 开始抓取第 ${scrapeState.currentPage} 页数据`);
+    console.log(`[100fun] ======== 开始抓取第 ${scrapeState.currentPage} 页数据 ========`);
     
     // 更新状态
     await updateState({
       status: 'scraping'
     });
     
+    // 1. 首先检查页面状态
+    console.log(`[100fun] 步骤1: 检查页面HTTP状态...`);
+    const pageStatusOk = await checkPageStatus();
+    if (!pageStatusOk) {
+      console.log(`[100fun] ⚠️ 页面状态检查失败，将刷新页面重试`);
+      
+      await updateState({
+        status: 'refreshing',
+        message: '页面状态异常，正在刷新页面...'
+      });
+      
+      setTimeout(() => refreshPageAndRestart(), 1000);
+      return;
+    }
+    
+    // 2. 检查表格是否存在
+    console.log(`[100fun] 步骤2: 检查表格是否存在...`);
+    const tableExists = await checkTableExists();
+    if (!tableExists) {
+      console.log(`[100fun] ⚠️ 表格不存在，将刷新页面重试`);
+      
+      await updateState({
+        status: 'refreshing',
+        message: '未找到表格，正在刷新页面...'
+      });
+      
+      setTimeout(() => refreshPageAndRestart(), 1000);
+      return;
+    }
+    
+    // 3. 页面和表格检查通过，开始抓取数据
+    console.log(`[100fun] 步骤3: 页面和表格检查通过，开始抓取数据...`);
+    
     // 执行抓取脚本
     const results = await chrome.scripting.executeScript({
       target: {tabId: scrapeState.targetTabId},
       func: () => {
         try {
-          console.log('[100fun] 开始抓取表格数据...');
+          console.log('[100fun] ======== 开始抓取表格数据 ========');
           
           // 首先尝试获取总条数
           let totalCount = null;
@@ -378,13 +575,28 @@ async function scrapeCurrentPage() {
           }
           
           // 抓取表格数据
-          console.log('[100fun] 开始抓取表格内容...');
+          console.log('[100fun] ======== 抓取表格内容 ========');
           const tables = document.querySelectorAll('.el-table__body');
+          console.log(`[100fun] 表格查询结果: 找到 ${tables.length} 个 .el-table__body 元素`);
+          
           if (tables.length === 0) {
-            console.log('[100fun] 页面上没有找到表格');
+            console.log('[100fun] ⚠️ 严重错误: 页面上没有找到表格，这不应该发生（前面已检查过）');
+            
+            // 添加更详细的调试信息
+            const allTables = document.querySelectorAll('table');
+            const elTables = document.querySelectorAll('.el-table');
+            const loadingElements = document.querySelectorAll('.el-loading-parent--relative');
+            
+            console.log(`[100fun] 调试信息: 所有table=${allTables.length}, .el-table=${elTables.length}, 加载中=${loadingElements.length}`);
+            
             return {
               success: false, 
-              message: '页面上没有找到表格',
+              message: '页面上没有找到表格（二次检查失败）',
+              debugInfo: {
+                allTables: allTables.length,
+                elTables: elTables.length,
+                loadingElements: loadingElements.length
+              },
               totalCount: totalCount,
               perPageSetting: perPageSetting,
               currentPage: currentPage,
@@ -392,10 +604,12 @@ async function scrapeCurrentPage() {
             };
           }
           
-          console.log(`[100fun] 找到 ${tables.length} 个表格`);
+          console.log(`[100fun] ✓ 成功找到 ${tables.length} 个表格，开始数据提取...`);
           const extractedTables = [];
           
           tables.forEach((table, tableIndex) => {
+            console.log(`[100fun] 处理表格 ${tableIndex + 1}/${tables.length}...`);
+            
             const tableData = {
               id: tableIndex + 1,
               rows: [],
@@ -407,25 +621,33 @@ async function scrapeCurrentPage() {
             const headerTable = table.closest('.el-table').querySelector('.el-table__header');
             if (headerTable) {
               const headerCells = headerTable.querySelectorAll('th');
-              headerCells.forEach(cell => {
+              console.log(`[100fun] 表格 ${tableIndex + 1} 表头单元格数: ${headerCells.length}`);
+              
+              headerCells.forEach((cell, cellIndex) => {
                 const cellContent = cell.querySelector('.cell') 
                   ? cell.querySelector('.cell').textContent.trim() 
                   : cell.textContent.trim();
                 headerRow.push(cellContent);
+                console.log(`[100fun] 表头[${cellIndex}]: "${cellContent}"`);
               });
+            } else {
+              console.log(`[100fun] 表格 ${tableIndex + 1} 未找到表头`);
             }
             
             if (headerRow.length > 0) {
               tableData.rows.push(headerRow);
-              console.log(`[100fun] 表格 ${tableIndex + 1} 表头: ${JSON.stringify(headerRow)}`);
+              console.log(`[100fun] 表格 ${tableIndex + 1} 表头完成: ${JSON.stringify(headerRow)}`);
             }
             
             // 获取表格内容
             const rows = table.querySelectorAll('tr');
-            rows.forEach(row => {
+            console.log(`[100fun] 表格 ${tableIndex + 1} 数据行数: ${rows.length}`);
+            
+            rows.forEach((row, rowIndex) => {
               const rowData = [];
               const cells = row.querySelectorAll('td');
-              cells.forEach(cell => {
+              
+              cells.forEach((cell, cellIndex) => {
                 const cellContent = cell.querySelector('.cell') 
                   ? cell.querySelector('.cell').textContent.trim() 
                   : cell.textContent.trim();
@@ -434,10 +656,13 @@ async function scrapeCurrentPage() {
               
               if (rowData.length > 0) {
                 tableData.rows.push(rowData);
+                if (rowIndex === 0) {
+                  console.log(`[100fun] 表格 ${tableIndex + 1} 第一行数据: ${JSON.stringify(rowData)}`);
+                }
               }
             });
             
-            console.log(`[100fun] 表格 ${tableIndex + 1} 数据行: ${tableData.rows.length - 1} 行`);
+            console.log(`[100fun] 表格 ${tableIndex + 1} 处理完成: 总行数=${tableData.rows.length}, 数据行=${tableData.rows.length - 1}`);
             extractedTables.push(tableData);
           });
           
@@ -469,6 +694,7 @@ async function scrapeCurrentPage() {
           }
 
           // ===== 改进部分：专门识别"订单创建时间"列 =====
+          console.log('[100fun] ======== 订单时间检测开始 ========');
           let firstOrderDate = null;
           let firstOrderDateColumn = -1;
           // 添加"订单创建时间"作为第一个要查找的表头名称
@@ -477,7 +703,8 @@ async function scrapeCurrentPage() {
           if (extractedTables[0] && extractedTables[0].rows.length >= 2) {
             // 获取表头
             const headers = extractedTables[0].rows[0];
-            console.log(`[100fun] 完整表头: ${JSON.stringify(headers)}`);
+            console.log(`[100fun] 完整表头分析: ${JSON.stringify(headers)}`);
+            console.log(`[100fun] 表头数量: ${headers.length}`);
             
             // 专门查找"订单创建时间"列
             for (let i = 0; i < headers.length; i++) {
@@ -487,7 +714,7 @@ async function scrapeCurrentPage() {
               // 首先精确匹配"订单创建时间"
               if (header === "订单创建时间") {
                 firstOrderDateColumn = i;
-                console.log(`[100fun] 找到精确匹配的订单创建时间列: 列索引=${i}`);
+                console.log(`[100fun] ✓ 找到精确匹配的订单创建时间列: 列索引=${i}`);
                 break;
               }
               
@@ -495,7 +722,7 @@ async function scrapeCurrentPage() {
               for (const keyword of possibleHeaders) {
                 if (header.includes(keyword)) {
                   firstOrderDateColumn = i;
-                  console.log(`[100fun] 找到时间列: 列索引=${i}, 表头="${header}", 匹配关键词="${keyword}"`);
+                  console.log(`[100fun] ✓ 找到时间列: 列索引=${i}, 表头="${header}", 匹配关键词="${keyword}"`);
                   break;
                 }
               }
@@ -507,19 +734,24 @@ async function scrapeCurrentPage() {
               const firstDataRow = extractedTables[0].rows[1]; // 第一行数据(索引1，因为0是表头)
               if (firstDataRow && firstDataRow.length > firstOrderDateColumn) {
                 firstOrderDate = firstDataRow[firstOrderDateColumn];
-                console.log(`[100fun] 第一条订单时间值: "${firstOrderDate}"`);
+                console.log(`[100fun] ✓ 成功提取第一条订单时间: "${firstOrderDate}"`);
+                console.log(`[100fun] 第一行完整数据: ${JSON.stringify(firstDataRow)}`);
               } else {
-                console.log(`[100fun] 无法获取第一行数据的时间值`);
+                console.log(`[100fun] ⚠️ 无法获取第一行数据的时间值 - 行数据不足`);
+                console.log(`[100fun] 第一行数据: ${firstDataRow ? JSON.stringify(firstDataRow) : '不存在'}`);
               }
             } else {
               // 如果没找到时间列，记录当前表格的所有表头以便调试
-              console.log(`[100fun] 警告: 在表头 [${headers.join(', ')}] 中没有找到任何时间相关列`);
+              console.log(`[100fun] ⚠️ 警告: 在表头 [${headers.join(', ')}] 中没有找到任何时间相关列`);
+              console.log(`[100fun] 可能的时间列关键词: [${possibleHeaders.join(', ')}]`);
             }
           } else {
-            console.log(`[100fun] 表格数据不足，无法提取订单时间`);
+            console.log(`[100fun] ⚠️ 表格数据不足，无法提取订单时间`);
+            console.log(`[100fun] 表格数量: ${extractedTables.length}, 第一个表格行数: ${extractedTables[0]?.rows.length || 0}`);
           }
           
-          console.log('[100fun] 表格数据抓取完成');
+          console.log('[100fun] ======== 订单时间检测结束 ========');
+          console.log('[100fun] ======== 表格数据抓取完成 ========');
           return {
             success: true,
             message: `成功抓取第 ${currentPage} 页表格数据`,
@@ -564,7 +796,7 @@ async function scrapeCurrentPage() {
     if (results && results[0] && results[0].result) {
       const result = results[0].result;
       if (result.success) {
-        console.log(`[100fun] 抓取第 ${scrapeState.currentPage} 页成功`);
+        console.log(`[100fun] ✓ 抓取第 ${scrapeState.currentPage} 页成功`);
 
         // ===== 日期检测部分 =====
         console.log('[100fun] ======== 日期检测开始 ========');
@@ -645,8 +877,29 @@ async function scrapeCurrentPage() {
           finishScrapeRound();
         }
       } else {
-        // 抓取失败
-        handleError(`抓取失败: ${result.message}`);
+        // 抓取失败 - 检查是否是表格相关问题
+        console.log(`[100fun] ⚠️ 抓取失败: ${result.message}`);
+        
+        if (result.message.includes('表格') || result.message.includes('没有找到') || 
+            result.debugInfo) {
+          console.log(`[100fun] 检测到表格相关问题，将刷新页面重试`);
+          
+          // 记录调试信息
+          if (result.debugInfo) {
+            console.log(`[100fun] 调试信息: ${JSON.stringify(result.debugInfo)}`);
+          }
+          
+          await updateState({
+            status: 'refreshing',
+            message: '抓取失败，正在刷新页面重试...'
+          });
+          
+          setTimeout(() => refreshPageAndRestart(), 1000);
+          return;
+        } else {
+          // 非表格相关问题，按原逻辑处理
+          handleError(`抓取失败: ${result.message}`);
+        }
       }
     } else {
       handleError('执行抓取脚本失败');
@@ -701,40 +954,54 @@ function checkIfDateIsToday(dateString) {
 // 刷新页面并重新开始抓取 - 改进版
 async function refreshPageAndRestart() {
   try {
-    console.log(`[100fun] 开始执行页面刷新流程 - 因为检测到非当天订单`);
+    console.log(`[100fun] ======== 开始执行页面刷新流程 ========`);
+    console.log(`[100fun] 刷新原因: 检测到页面状态异常、表格缺失或非当天订单`);
     
     // 更新状态 - 重置页码到第一页
     await updateState({
       status: 'refreshing',
-      message: '正在刷新页面以获取当天数据...',
+      message: '正在刷新页面以获取正确数据...',
       currentPage: 1,           // 重置为第一页
       collectedPages: 0,        // 重置已收集页数
       allPagesData: []          // 清空已收集的数据
     });
     
+    console.log(`[100fun] ✓ 状态已重置: 页码=${scrapeState.currentPage}, 已收集页数=${scrapeState.collectedPages}`);
+    
     // 执行页面刷新
-    console.log(`[100fun] 调用页面刷新`);
-    await chrome.scripting.executeScript({
+    console.log(`[100fun] 调用页面刷新...`);
+    const refreshResult = await chrome.scripting.executeScript({
       target: {tabId: scrapeState.targetTabId},
       func: () => {
-        console.log('[100fun] 页面内脚本: 正在刷新页面获取今日数据...');
+        console.log('[100fun] 页面内脚本: 正在刷新页面获取正确数据...');
         // 记录当前URL，以便后续验证
         const originalUrl = window.location.href;
-        console.log(`[100fun] 当前页面URL: ${originalUrl}`);
+        const timestamp = new Date().toISOString();
+        console.log(`[100fun] 刷新前URL: ${originalUrl}`);
+        console.log(`[100fun] 刷新时间: ${timestamp}`);
         
         // 强制刷新页面
         window.location.reload(true);
-        return { success: true, originalUrl };
+        return { success: true, originalUrl, timestamp };
       }
     });
     
+    if (refreshResult && refreshResult[0] && refreshResult[0].result) {
+      console.log(`[100fun] ✓ 页面刷新指令已发送: ${refreshResult[0].result.originalUrl}`);
+    }
+    
     // 给页面充分的加载时间
-    console.log(`[100fun] 等待页面加载 (4秒)...`);
-    await new Promise(resolve => setTimeout(resolve, 4000));
+    console.log(`[100fun] 等待页面加载 (5秒)...`);
+    await new Promise(resolve => setTimeout(resolve, 5000));
     
     // 重新点击查询按钮
     console.log(`[100fun] 重新点击查询按钮...`);
-    await clickQueryButton();
+    try {
+      await clickQueryButton();
+      console.log(`[100fun] ✓ 查询按钮点击成功`);
+    } catch (queryErr) {
+      console.log(`[100fun] ⚠️ 查询按钮点击失败: ${queryErr.message}`);
+    }
     
     // 等待查询结果加载
     console.log(`[100fun] 等待查询结果加载 (3秒)...`);
@@ -746,13 +1013,18 @@ async function refreshPageAndRestart() {
     // 再次确认状态已重置为第一页
     await updateState({
       currentPage: 1,
-      status: 'scraping'
+      status: 'scraping',
+      message: '页面刷新完成，重新开始抓取...'
     });
+    
+    console.log(`[100fun] ✓ 最终确认: 当前页=${scrapeState.currentPage}, 状态=${scrapeState.status}`);
+    console.log(`[100fun] ======== 页面刷新流程完成，开始抓取 ========`);
     
     // 开始抓取第一页
     scrapeCurrentPage();
     
   } catch (err) {
+    console.error(`[100fun] ⚠️ 刷新页面出错: ${err.message}`);
     handleError(`刷新页面出错: ${err.message}`);
   }
 }
