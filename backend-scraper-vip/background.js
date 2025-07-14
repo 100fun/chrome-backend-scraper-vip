@@ -656,7 +656,7 @@ async function scrapeCurrentPage() {
   }
 }
 
-// 检查日期是否为今天 - 针对"订单创建时间"列优化版
+// 检查日期是否为今天 - 加强版，确保每次都使用最新的系统时间
 function checkIfDateIsToday(dateString) {
   try {
     if (!dateString) {
@@ -664,14 +664,18 @@ function checkIfDateIsToday(dateString) {
       return false;
     }
     
-    // 获取当前日期
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
+    // 强制获取当前系统时间（不使用缓存）
+    const now = new Date();
+    
+    // 获取本地时区的年月日
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
     const todayFormatted = `${year}-${month}-${day}`;
     
-    console.log(`[100fun] 今天日期: ${todayFormatted}`);
+    // 记录详细日志，包含完整时间戳以便调试
+    console.log(`[100fun] 当前系统时间: ${now.toISOString()}`);
+    console.log(`[100fun] 今天日期(本地): ${todayFormatted}`);
     console.log(`[100fun] 订单日期原始值: "${dateString}"`);
     
     // 处理"2025-07-08 23:48"这种格式，提取日期部分
@@ -685,7 +689,7 @@ function checkIfDateIsToday(dateString) {
     
     // 比较日期
     const result = orderDate === todayFormatted;
-    console.log(`[100fun] 日期比较结果: ${result}`);
+    console.log(`[100fun] 日期比较结果: ${result ? '是今天' : '不是今天'}`);
     
     return result;
   } catch (error) {
@@ -699,10 +703,13 @@ async function refreshPageAndRestart() {
   try {
     console.log(`[100fun] 开始执行页面刷新流程 - 因为检测到非当天订单`);
     
-    // 更新状态
+    // 更新状态 - 重置页码到第一页
     await updateState({
       status: 'refreshing',
-      message: '正在刷新页面以获取当天数据...'
+      message: '正在刷新页面以获取当天数据...',
+      currentPage: 1,           // 重置为第一页
+      collectedPages: 0,        // 重置已收集页数
+      allPagesData: []          // 清空已收集的数据
     });
     
     // 执行页面刷新
@@ -733,8 +740,16 @@ async function refreshPageAndRestart() {
     console.log(`[100fun] 等待查询结果加载 (3秒)...`);
     await new Promise(resolve => setTimeout(resolve, 3000));
     
-    // 重新开始抓取当前页
-    console.log(`[100fun] 重新开始抓取...`);
+    // 重新开始抓取 - 确保从第一页开始
+    console.log(`[100fun] 重新开始抓取 (从第1页)...`);
+    
+    // 再次确认状态已重置为第一页
+    await updateState({
+      currentPage: 1,
+      status: 'scraping'
+    });
+    
+    // 开始抓取第一页
     scrapeCurrentPage();
     
   } catch (err) {
