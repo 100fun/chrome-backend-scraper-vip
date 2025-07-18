@@ -22,6 +22,9 @@ document.addEventListener('DOMContentLoaded', function() {
   // 添加统一重置按钮事件
   document.getElementById('fullResetApp').addEventListener('click', fullResetApplication);
   
+  // 添加中文演示按钮事件
+  document.getElementById('chineseResponseBtn').addEventListener('click', showChineseResponse);
+  
   // 周期性抓取设置
   const periodicSwitch = document.getElementById('togglePeriodicSwitch');
   periodicSwitch.addEventListener('change', togglePeriodicScrape);
@@ -268,6 +271,24 @@ function updatePeriodicInterval() {
       console.error('[100fun] UI: 更新周期间隔失败:', errMsg);
     }
   });
+}
+
+// 显示中文回答演示
+function showChineseResponse() {
+  const responseElement = document.getElementById('chineseResponse');
+  const buttonElement = document.getElementById('chineseResponseBtn');
+  
+  if (responseElement.classList.contains('hidden')) {
+    // 显示回答
+    responseElement.classList.remove('hidden');
+    buttonElement.textContent = '隐藏回答';
+    addLog('显示中文语言能力演示', 'info');
+  } else {
+    // 隐藏回答
+    responseElement.classList.add('hidden');
+    buttonElement.textContent = '点击查看回答';
+    addLog('隐藏中文语言能力演示', 'info');
+  }
 }
 
 // 添加统一重置功能

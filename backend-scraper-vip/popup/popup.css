@@ -311,3 +311,72 @@ input:checked + .slider:before {
   margin-top: 0;
   color: #0c63e4;
 }
+
+/* 语言演示容器样式 */
+.language-demo-container {
+  margin: 15px 0;
+  padding: 12px;
+  border-radius: 4px;
+  background-color: #e7f3ff;
+  border: 1px solid #b3d9ff;
+}
+
+.language-demo-container h3 {
+  margin-top: 0;
+  color: #0056b3;
+  font-size: 16px;
+}
+
+.demo-question {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.question-text {
+  font-weight: bold;
+  color: #333;
+  font-size: 14px;
+}
+
+.demo-button {
+  background-color: #007bff;
+  color: white;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.3s;
+}
+
+.demo-button:hover {
+  background-color: #0056b3;
+  transform: scale(1.05);
+}
+
+.response-text {
+  background-color: #fff;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #cce7ff;
+  color: #333;
+  font-size: 13px;
+  line-height: 1.4;
+  animation: fadeIn 0.5s ease-in;
+}
+
+.response-text small {
+  color: #666;
+  font-style: italic;
+}
+
+.hidden {
+  display: none;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
